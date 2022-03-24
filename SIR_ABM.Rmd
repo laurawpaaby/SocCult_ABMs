@@ -1,21 +1,21 @@
 ---
 title: "SIR-model functions"
-author: "Klara Krøyer Fomsgaard"
+author: "Laura Paaby"
 date: "3/16/2022"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+```{r}
+knitr::opts_chunk$set
 ```
 
 ## Creating an ABM in R - the basics
 
 The following is an example of how one can create a ~very~ simple ABM. In this example, we create our ABM based on a SIR contagion model - a simplistic description of how an epidemic evolves. 
 The SIR-model separates a population into three different categories: 
-   1. Susceptible - People who have not been infected yet
-   2. Infected - People who are sick and can infect others
-   3. Recovered - People who have been sick but are now recovered and immune
+   1. *Susceptible* - People who have not been infected yet
+   2. *Infected* - People who are sick and can infect others
+   3. *Recovered* - People who have been sick but are now recovered and immune
 
 The progression of a SIR model is describes by differential equations, but as this is just an example of what the most basic elements in an ABM in R is, we will not dive too much into this. 
 
@@ -38,7 +38,7 @@ pacman::p_load(tidyverse)
 ## Creating our globals
 The most important parameters that are included in all ABMs are N (number of agents) and t_max (number of timesteps)
 In our model, we also want to be able to adjust some of the things that might affect the dynamics of the model. This includes:
- 1. How many agents one agent can socialize with per timestep
+ 1. How many agents one agent can socialize with per time step (pr loop)
  2. How many people are infected in the beginning
  3. How infectious the disease is (The probability of getting infected when in contact with a sick agent)
  4. How long it takes before an agent is no longer sick/infectious
@@ -46,11 +46,16 @@ In our model, we also want to be able to adjust some of the things that might af
  Below is a list of the variables we want to include and some baseline parameter values
  
 ```{r}
+set.seed(100)
 N = 1000                        # Number of agents in the ABM
 t_max <- 50                     # Number of days for the ABM to run
 socializing <- 1                # Amount of people one can socialize with in one day 
-initially_infected <- .01       # Initial amount of infected people in % 
-inf_prob <- 30                  # The probability of getting infected when meeting a sick agent
+initially_infected <- .01   # Initial amount of infected people in % 
+
+immun_power <- runif(N, 5, 85)
+contage_power <- runif(N, 5, 85)
+  
+inf_prob <- (immun_power+contage_power)/2# The probability of getting infected when meeting a sick agent
 recovery_time <- 7              # The amount of days an agent is infectious/sick, before they are recovered
 ```
 
@@ -59,14 +64,20 @@ recovery_time <- 7              # The amount of days an agent is infectious/sick
 One of the nice things about making the ABM a function, is that you can insert different parameter values and see how they affect the outcome of the model. Usually, the best way to go about making an ABM is to start it as simple code and convert it to a function afterwards. You will probably also benefit from making the dynamics inside your ABM into functions, as it gives a much cleaner code and more flexibility.
 
 ```{r}
+set.seed(100)
 ABM_function <- function(N,t_max,socializing,initially_infected,inf_prob,recovery_rate){
   # Creating a tibble with IDs for N amount of agents, including their health status. 
   # A small number of initially infected agents are included, based on the 'initially_infected' parameter 
-  population <- tibble(ID = 1:N,                                                                                       # Agent ID
-                       status = sample( c("S","I"), N, replace=TRUE, prob=c(1-initially_infected, initially_infected)),# Health status
+  population <- tibble(ID = 1:N,                                                                                       # Agent ID assigned for all 1000 agents 
+                       status = sample( c("S","I"), N, replace=TRUE, prob=c(1-initially_infected,initially_infected)),
+                       #Health status
+                       immun_power = runif(N, 5, 85), #the lower the immune power the better the immune system of the agent
+                       contage_power = runif(N,5,85), #how good you are to contage other with the virus 
+                       
                        days_infected = 0)                                                                              # Days of infection
   
   # Creating a tibble for logging the progression of susceptible, infected and recovered agents as time passes
+  # empty tibble with the length of the amount of the time it runs 
   inf_log <- tibble(time = 1:t_max,
                     susceptible_rate = NA,
                     infection_rate = NA,
@@ -84,20 +95,20 @@ ABM_function <- function(N,t_max,socializing,initially_infected,inf_prob,recover
         population$status[agent] <-  "R"
       }
 
-      # MEETING OTHER AGENTS - THIS IS THE INTERACTION FOLKS
+      # MEETING OTHER AGENTS - THIS IS THE INTERACTION FOLKS - here it is done by a random sample 
       # Picking random agents to socialize with - this is based on the socialization parameter, e.g. how many agents one can meet a time-step
       encounter <-  sample(1:N,socializing) 
       
       for (i in encounter){
         if (population$status[agent] == "S" & population$status[population$ID[i]] == "I"){
-          inf_roll <- sample(1:100,1)
-          if (inf_roll < inf_prob){
+          inf_roll <- sample(1:100,1) # this is a random role, where there is a 30% chance of getting sick
+          if (inf_roll < (population$immun_power[agent]+population$contage_power[population$ID[i]])/2){ #if the number is smaller than being infected, you get sick
             population$status[agent] <-  "I"
           }
         }
       }
       
-    }
+    } #we want to log all of them, and return it. 
   inf_log$susceptible_rate[days] <- length(which(population$status=="S"))  
   inf_log$infection_rate[days] <- length(which(population$status=="I"))
   inf_log$recovery_rate[days] <- length(which(population$status=="R"))
@@ -139,7 +150,7 @@ N = 1000                        # Number of agents in the ABM
 t_max <- 50                     # Number of days for the ABM to run
 socializing <- 1                # Amount of people one can socialize with in one day 
 initially_infected <- .01       # Initial amount of infected people in % 
-inf_prob <- 30                  # The probability of getting infected when meeting a sick agent
+inf_prob <- (immun_power+contage_power)/2                 # The probability of getting infected when meeting a sick agent
 recovery_time <- 7              # The amount of days an agent is infectious/sick, before they are recovered
 
 ABM_visualization(3000,t_max,1,initially_infected,inf_prob,7)
@@ -152,5 +163,7 @@ As this is an oversimplified model. we did e.g. not incorporate random spatial m
 We can also change the model, making it a so-called SEIR model instead. This model has an extra step, where the agent is exposed but not sick yet. One could incorporate, that the agent is less infectious in the exposed fase, than when sick and see how that affects the nature of the model.
 
 We could also add, that each agent has a slightly different probability of getting infected.
+*we did that by making a different immune and contagion score for all agents, in a such fashion that they were more or less likely to get infected depending on these scores.*
+
 
 We can also incorporate a more fluent way of testing different parameter values by e.g. looping over a list of reasonable values for one parameter, while keeping others constant.
